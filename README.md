@@ -92,5 +92,11 @@ python3 mping -s 1.1.1.1
 GNU GENERAL PUBLIC LICENSE
 
 ---
+## Tested
+
+Tested on Ubuntu 24.4.2 and MacOS 15.4.1 
+
+---
+
 
 Written by Matt Perkins, 2025.
