@@ -19,7 +19,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-# Version 0.02 
+# Version 0.03 
 import subprocess
 import re
 import time
@@ -169,7 +169,7 @@ def main():
     try:
         while True:
             latency = get_latency(host)
-            if not silent:
+            if latency is not None and not silent:
                 print('\a', end='', flush=True)
 
             total_pings += 1
