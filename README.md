@@ -87,6 +87,14 @@ python3 mping -s 1.1.1.1
 
 ---
 
+## Install 
+
+<img src="shot.png"> 
+
+---
+
+
+
 ## License
 
 GNU GENERAL PUBLIC LICENSE
