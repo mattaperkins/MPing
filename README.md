@@ -83,17 +83,14 @@ python3 mping -s 1.1.1.1
 ## Future Ideas
 
 - CSV logging mode
-- NS/ICMP timestamp support for fine-grain accuracy
-- Fullscreen curses/TUI display
 - IPv6 support
 
 ---
 
 ## License
 
-MIT (or your preferred open license)
+GNU GENERAL PUBLIC LICENSE
 
 ---
 
 Written by Matt Perkins, 2025.
-
