@@ -1,0 +1,78 @@
+.TH MPING 1 "June 2025" "Version 1.0" "MPing Manual"
+
+.SH NAME
+mping \- terminal-based ping visualiser with jitter and loss display
+
+.SH SYNOPSIS
+.B mping
+[\fB\-s\fR|\fB\-\-silent\fR]
+[\fB\-h\fR|\fB\-\-help\fR]
+\fIhost\fR
+
+.SH DESCRIPTION
+\fBMPing\fR is a terminal utility that visualises the latency, jitter, and packet loss of ICMP echo requests ("ping") to a target host or IP address. It produces a compact, real-time, horizontally scrolling graph using Unicode block characters, colour-coded by performance level.
+
+MPing runs continuously until interrupted (Ctrl+C).
+
+.SH OPTIONS
+.TP
+\fB\-s\fR, \fB\-\-silent\fR
+Disable the audible terminal bell on successful pings. Bell remains disabled on timeouts.
+
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Display help and usage information, then exit.
+
+.SH COLOURS
+.TP
+\fBGreen\fR
+Latency below threshold — good performance.
+.TP
+\fBYellow\fR
+Latency exceeds dynamic scale threshold.
+.TP
+\fBRed\fR
+Timeout or unreachable — represents packet loss.
+
+.SH OUTPUT
+The graph updates each second with a coloured block character representing the ping result. A summary line includes:
+
+.RS
+.IP \[bu] 2
+\fBLatency\fR (latest round-trip time)
+.IP \[bu]
+\fBJitter\fR (difference between last two latencies)
+.IP \[bu]
+\fBLoss\fR (% of timeouts since start)
+.RE
+
+Example:
+
+.EX
+▁▃▅▅▆▇█▇▇▆▅▃▁▁▁▁▁▁▁▁ timeout  jitter: 15.2ms  loss: 18%
+.EE
+
+.SH PLATFORM SUPPORT
+MPing automatically detects the system type:
+
+.TP
+\fBLinux\fR
+Uses \fBping -c 1 -W 1\fR
+.TP
+\fBmacOS\fR
+Uses \fBping -c 1 -t 1\fR
+
+.SH DEPENDENCIES
+.TP
+Python 3.6+
+.TP
+ping (ICMP utility)
+.TP
+A Unicode and ANSI-compatible terminal (e.g., xterm, Gnome Terminal)
+
+.SH AUTHOR
+Matt Perkins <2025>
+
+.SH LICENSE
+MIT License
+
