@@ -19,7 +19,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-# Version 0.03 
+# Version 1.00 
 import subprocess
 import re
 import time
