@@ -41,7 +41,7 @@ YELLOW = '\033[93m'
 RESET = '\033[0m'
 
 def print_help():
-    print("Usage: python3 mping.py [options] <host_or_ip>\n")
+    print("Usage: mping [options] <host_or_ip>\n")
     print("Options:")
     print("  -h, --help       Show this help message and exit.")
     print("  -s, --silent     Suppress terminal bell (no audible ping).")
