@@ -89,6 +89,9 @@ python3 mping -s 1.1.1.1
 
 ## Install 
 
+On most systems it should be a matter of 
+<pre>git clone https://github.com/mattaperkins/MPing ; sudo make install </pre>
+
 <img src="shot.png"> 
 
 ---
