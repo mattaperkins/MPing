@@ -44,10 +44,11 @@ python3 mping [options] <host_or_ip>
 
 ### Options:
 
-| Option           | Description                         |
-| ---------------- | ----------------------------------- |
-| `-h`, `--help`   | Show help and usage information     |
-| `-s`, `--silent` | Suppress terminal bell on each ping |
+| Option            | Description                         |
+| ----------------  | ----------------------------------- |
+| `-h`, `--help`    | Show help and usage information     |
+| `-s`, `--silent`  | Suppress terminal bell on each ping |
+| `-v`, `--version` | Suppress terminal bell on each ping |
 
 ### Examples:
 
