@@ -44,7 +44,7 @@ YELLOW = '\033[93m'
 RESET = '\033[0m'
 
 def print_help():
-    print(f"MPing - Matt Perkins Version {VERSION}")
+    print(f"MPing - Matt Perkins. Version {VERSION}")
     print("Usage: mping [options] <host_or_ip>\n")
     print("Options:")
     print("  -h, --help       Show this help message and exit.")
@@ -85,7 +85,7 @@ def check_host_resolvable(host):
 
 def determine_scale(host, pings=3, fallback=300.0):
     latencies = []
-    print(f"MPing - Matt Perkins Version {VERSION}") 
+    print(f"MPing - Matt Perkins. Version {VERSION}") 
     print(f"Probing {host} to determine scale...")
     for _ in range(pings):
         latency = get_latency(host)
@@ -138,7 +138,7 @@ def parse_args():
         elif arg in ('-s', '--silent'):
             silent = True
         elif arg in ('-v', '--version'):
-            print(f"MPing - Matt Perkins Version {VERSION}")
+            print(f"MPing - Matt Perkins.  Version {VERSION}")
             sys.exit(0)
         elif not arg.startswith('-'):
             host = arg
