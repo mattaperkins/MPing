@@ -19,7 +19,10 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-# Version 1.00 
+# Version 1.01 
+
+VERSION = "1.01" 
+
 import subprocess
 import re
 import time
@@ -41,10 +44,12 @@ YELLOW = '\033[93m'
 RESET = '\033[0m'
 
 def print_help():
+    print(f"MPing - Matt Perkins Version {VERSION}")
     print("Usage: mping [options] <host_or_ip>\n")
     print("Options:")
     print("  -h, --help       Show this help message and exit.")
     print("  -s, --silent     Suppress terminal bell (no audible ping).")
+    print("  -v, --version    Show Version.")
     sys.exit(0)
 
 def get_latency(host):
@@ -80,6 +85,7 @@ def check_host_resolvable(host):
 
 def determine_scale(host, pings=3, fallback=300.0):
     latencies = []
+    print(f"MPing - Matt Perkins Version {VERSION}") 
     print(f"Probing {host} to determine scale...")
     for _ in range(pings):
         latency = get_latency(host)
@@ -131,6 +137,9 @@ def parse_args():
             print_help()
         elif arg in ('-s', '--silent'):
             silent = True
+        elif arg in ('-v', '--version'):
+            print(f"MPing - Matt Perkins Version {VERSION}")
+            sys.exit(0)
         elif not arg.startswith('-'):
             host = arg
         else:
