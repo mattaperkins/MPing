@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+# mping-multi — Python curses multi-host ping with Unicode bar graphs
+# Dots mode: fills left→right; when full, resets to empty and starts again.
+# Miss (timeout) also resets dots to empty.
+# Blocks mode: proportional fill (█/░) from metric.
+# macOS/Linux ping handling; mping-style colours (loss=red, slow>=threshold=yellow, else green)
+
+import argparse
+import curses
+import locale
+import platform
+import queue
+import re
+import signal
+import subprocess
+import sys
+import threading
+import time
+from typing import Dict, List, Optional, Tuple
+
+# Ensure Unicode rendering for block/dot chars
+locale.setlocale(locale.LC_ALL, "")
+
+# ---------------- Config defaults ----------------
+DEFAULT_INTERVAL_MS = 1000
+DEFAULT_TIMEOUT_S   = 1            # logical timeout knob
+DEFAULT_WINDOW      = 60
+DEFAULT_BAR_WIDTH   = 24
+DEFAULT_SLOW_MS     = 150          # RTT >= this = "slow" => yellow
+
+# Platform detection for ping flags
+IS_MAC = (platform.system() == "Darwin")
+
+# ---------------- Regex for RTT parse ------------
+PING_RTT_RE = re.compile(r'time[=<]([\d\.]+)\s*ms')
+
+# ---------------- Data classes -------------------
+class HostStats:
+    __slots__ = ("host","sent","recv","rtt_sum","rtt_cnt","rtt_min","rtt_max",
+                 "win_size","win_pos","win_ok","last_error",
+                 "dot_len")  # for dots-mode progressive fill
+    def __init__(self, host: str, window: int):
+        self.host = host
+        self.sent = 0
+        self.recv = 0
+        self.rtt_sum = 0.0
+        self.rtt_cnt = 0
+        self.rtt_min = 0.0
+        self.rtt_max = 0.0
+        self.win_size = window
+        self.win_pos = 0                  # next index to write
+        self.win_ok = [0]*window          # 1=reply ok, 0=timeout
+        self.last_error: Optional[str] = None
+        self.dot_len = 0                  # dots-mode progressive fill length
+
+    def reset(self, window: Optional[int] = None):
+        self.sent = self.recv = 0
+        self.rtt_sum = 0.0
+        self.rtt_cnt = 0
+        self.rtt_min = self.rtt_max = 0.0
+        if window is not None and window != self.win_size:
+            self.win_size = window
+            self.win_ok = [0]*window
+        else:
+            for i in range(self.win_size):
+                self.win_ok[i] = 0
+        self.win_pos = 0
+        self.last_error = None
+        self.dot_len = 0
+
+    def push_window(self, ok: int):
+        self.win_ok[self.win_pos] = 1 if ok else 0
+        self.win_pos = (self.win_pos + 1) % self.win_size
+
+    def success_frac(self) -> float:
+        if self.win_size == 0:
+            return 0.0
+        return sum(self.win_ok) / float(self.win_size)
+
+    def loss_pct(self) -> float:
+        return (100.0*(self.sent - self.recv)/self.sent) if self.sent else 0.0
+
+    def avg_rtt(self) -> float:
+        return (self.rtt_sum/self.rtt_cnt) if self.rtt_cnt else 0.0
+
+# ---------------- Worker thread ------------------
+class PingWorker(threading.Thread):
+    def __init__(self, host: str, interval_ms: int, timeout_s: int,
+                 outq: "queue.Queue[Tuple[str,dict]]"):
+        super().__init__(daemon=True)
+        self.host = host
+        self.interval_ms = interval_ms
+        self.timeout_s = timeout_s
+        self.q = outq
+        self.stop_evt = threading.Event()   # do NOT name _stop
+
+        # Build base ping command per platform
+        # Linux:  ping -n -c 1 -W <seconds>
+        # macOS:  ping -n -c 1 -W <milliseconds>
+        if IS_MAC:
+            ms = max(1, int(self.timeout_s * 1000))
+            self.base_cmd = ["ping", "-n", "-c", "1", "-W", str(ms), self.host]
+        else:
+            self.base_cmd = ["ping", "-n", "-c", "1", "-W", str(self.timeout_s), self.host]
+
+    def stop(self):
+        self.stop_evt.set()
+
+    def run(self):
+        while not self.stop_evt.is_set():
+            t0 = time.time()
+            sent = 1; recv = 0; rtt_ms = None; err = None
+            try:
+                proc = subprocess.run(self.base_cmd, text=True, capture_output=True)
+                if proc.returncode == 0:
+                    recv = 1
+                    m = PING_RTT_RE.search(proc.stdout)
+                    if m:
+                        rtt_ms = float(m.group(1))
+                else:
+                    if proc.stderr:
+                        tail = proc.stderr.strip().splitlines()
+                        err = tail[-1] if tail else None
+                    elif proc.stdout:
+                        tail = proc.stdout.strip().splitlines()
+                        err = tail[-1] if tail else None
+            except Exception as e:
+                err = str(e)
+
+            self.q.put((self.host, {"sent": sent, "recv": recv, "rtt": rtt_ms, "err": err}))
+
+            elapsed_ms = int((time.time()-t0)*1000)
+            sleep_ms = max(0, self.interval_ms - elapsed_ms)
+            self.stop_evt.wait(sleep_ms/1000.0)
+
+# ---------------- TUI helpers --------------------
+class UIConfig:
+    def __init__(self):
+        self.interval_ms = DEFAULT_INTERVAL_MS
+        self.timeout_s   = DEFAULT_TIMEOUT_S
+        self.bar_width   = DEFAULT_BAR_WIDTH
+        self.window      = DEFAULT_WINDOW
+        self.metric      = "success"   # or "rtt" (blocks mode)
+        self.style       = "dots"      # or "blocks"
+        self.slow_ms     = DEFAULT_SLOW_MS
+
+def colour_for_mping_style(loss_pct: float, avg_ms: float) -> int:
+    """mping-style colouring: any loss=RED; else if slow>=threshold=YELLOW; else GREEN"""
+    if loss_pct > 0.0:
+        return 1  # red
+    if avg_ms >= DEFAULT_SLOW_MS:
+        return 3  # yellow
+    return 2      # green
+
+def draw_bar_blocks(frac: float, width: int) -> str:
+    """Proportional fill using Unicode blocks."""
+    frac = max(0.0, min(1.0, frac))
+    filled = int(frac * width + 0.5)
+    filled = min(width, max(0, filled))
+    return "█" * filled + "░" * (width - filled)
+
+def draw_bar_dots_progress(dot_len: int, width: int) -> str:
+    """
+    Progressive dots fill (wrap-reset):
+      - Shows '•' * dot_len followed by '·' to width.
+      - Caller increments dot_len per successful probe, resets to 0 on timeout
+        and immediately after reaching width (wrap).
+    """
+    dot_len = max(0, min(width, dot_len))
+    return "•" * dot_len + "·" * (width - dot_len)
+
+def fit(s: str, n: int) -> str:
+    return s if len(s)<=n else (s[:max(0,n-1)]+"…")
+
+# ---------------- Main TUI loop ------------------
+def curses_main(stdscr, hosts: List[str], cfg: UIConfig):
+    curses.curs_set(0)
+    stdscr.nodelay(True)
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_RED,    -1)
+    curses.init_pair(2, curses.COLOR_GREEN,  -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+    curses.init_pair(4, curses.COLOR_CYAN,   -1)
+
+    stats: Dict[str, HostStats] = {h: HostStats(h, cfg.window) for h in hosts}
+    q: "queue.Queue[Tuple[str,dict]]" = queue.Queue()
+    workers = [PingWorker(h, cfg.interval_ms, cfg.timeout_s, q) for h in hosts]
+    for w in workers: w.start()
+
+    def reset_all():
+        for hs in stats.values():
+            hs.reset(cfg.window)
+
+    try:
+        while True:
+            # apply results
+            updated_hosts = set()
+            while True:
+                try:
+                    host, update = q.get_nowait()
+                except queue.Empty:
+                    break
+                hs = stats.get(host)
+                if not hs: continue
+                hs.sent += update["sent"]
+                hs.recv += update["recv"]
+                if update["rtt"] is not None:
+                    rtt = float(update["rtt"])
+                    hs.rtt_sum += rtt
+                    hs.rtt_cnt += 1
+                    hs.rtt_min = rtt if hs.rtt_cnt == 1 else min(hs.rtt_min, rtt)
+                    hs.rtt_max = rtt if hs.rtt_cnt == 1 else max(hs.rtt_max, rtt)
+
+                # rolling success window for metrics/colour
+                ok = 1 if update["recv"] else 0
+                hs.push_window(ok)
+
+                # dots-mode progressive fill control:
+                # - success: grow by 1; if reached width -> wrap to 0
+                # - failure: reset to 0
+                if ok:
+                    hs.dot_len += 1
+                    if hs.dot_len >= cfg.bar_width:
+                        hs.dot_len = 0
+                else:
+                    hs.dot_len = 0
+
+                if update["err"]:
+                    hs.last_error = update["err"]
+                updated_hosts.add(host)
+
+            # draw
+            stdscr.erase()
+            rows, cols = stdscr.getmaxyx()
+
+            stdscr.attron(curses.A_BOLD)
+            stdscr.addstr(0, 0, "mping-multi — Multi Host Monitor")
+            stdscr.attroff(curses.A_BOLD)
+            title2 = "(Matt Perkins © | s=style L=metric +/-=width r=reset q=quit)"
+            stdscr.addstr(1, 0, fit(title2, cols))
+            stdscr.hline(2, 0, curses.ACS_HLINE, cols)
+
+            info = f"Interval:{cfg.interval_ms}ms  Timeout:{cfg.timeout_s}s  Window:{cfg.window}  Bar:{cfg.bar_width}  Metric:{cfg.metric}  Style:{cfg.style}  Slow≥{DEFAULT_SLOW_MS}ms  {'macOS' if IS_MAC else 'Linux'}"
+            stdscr.addstr(3, 0, fit(info, cols))
+            stdscr.hline(4, 0, curses.ACS_HLINE, cols)
+
+            stdscr.attron(curses.A_BOLD)
+            stdscr.addstr(5, 0, fit(f"{'Host':24} {'Sent':>7} {'Recv':>7} {'Loss%':>7} {'Avg':>7} {'Min':>7} {'Max':>7}  Bar", cols))
+            stdscr.attroff(curses.A_BOLD)
+
+            y = 6
+            for h in hosts:
+                if y >= rows-1: break
+                hs = stats[h]
+                loss = hs.loss_pct()
+                avg = hs.avg_rtt()
+
+                if cfg.style == "dots":
+                    bar = draw_bar_dots_progress(hs.dot_len, cfg.bar_width)
+                else:
+                    # proportional bar from selected metric
+                    frac = hs.success_frac() if cfg.metric == "success" else (
+                        0.0 if avg <= 0 else max(0.0, 1.0 - min(avg, 500.0)/500.0)
+                    )
+                    bar = draw_bar_blocks(frac, cfg.bar_width)
+
+                colour = colour_for_mping_style(loss, avg)
+                stdscr.attron(curses.color_pair(colour))
+                line = f"{fit(hs.host,24):24} {hs.sent:7d} {hs.recv:7d} {loss:7.1f} {avg:7.1f} {hs.rtt_min:7.1f} {hs.rtt_max:7.1f}  {bar}"
+                stdscr.addstr(y, 0, fit(line, cols))
+                stdscr.attroff(curses.color_pair(colour))
+
+                if hs.last_error and y+1 < rows-1:
+                    stdscr.attron(curses.color_pair(4))
+                    stdscr.addstr(y+1, 4, fit(f"last error: {hs.last_error}", cols-4))
+                    stdscr.attroff(curses.color_pair(4))
+                    y += 1
+                y += 1
+
+            stdscr.addstr(rows-1, 0, fit("q=quit  s=style  L=metric  +=wider  -=narrow  r=reset", cols))
+            stdscr.refresh()
+
+            try:
+                ch = stdscr.getch()
+            except curses.error:
+                ch = -1
+            if ch in (ord('q'), ord('Q')):
+                break
+            elif ch in (ord('s'), ord('S')):
+                cfg.style = "blocks" if cfg.style == "dots" else "dots"
+                # ensure bar width respected if user changed it earlier
+                for hs in stats.values():
+                    hs.dot_len = min(hs.dot_len, cfg.bar_width)
+            elif ch == ord('L'):
+                cfg.metric = "rtt" if cfg.metric == "success" else "success"
+            elif ch == ord('+'):
+                cfg.bar_width = min(120, cfg.bar_width + 2)
+                for hs in stats.values():
+                    hs.dot_len = min(hs.dot_len, cfg.bar_width)
+            elif ch == ord('-'):
+                cfg.bar_width = max(8, cfg.bar_width - 2)
+                for hs in stats.values():
+                    hs.dot_len = min(hs.dot_len, cfg.bar_width)
+            elif ch in (ord('r'), ord('R')):
+                reset_all()
+
+            time.sleep(0.05)
+    finally:
+        for w in workers: w.stop()
+        for w in workers: w.join()
+
+# ---------------- Arg parse & entry ----------------
+def parse_args(argv: List[str]) -> Tuple['UIConfig', List[str]]:
+    p = argparse.ArgumentParser(description="mping-multi — multi-host ping with Unicode bar graphs (curses)")
+    p.add_argument("-i", "--interval-ms", type=int, default=DEFAULT_INTERVAL_MS, help="interval per host probe (ms)")
+    p.add_argument("-t", "--timeout", type=int, default=DEFAULT_TIMEOUT_S, help="per-probe timeout (seconds logical; converted to ms on macOS)")
+    p.add_argument("-w", "--window", type=int, default=DEFAULT_WINDOW, help="rolling window size for success metric")
+    p.add_argument("--blocks", action="store_true", help="use blocks bar style (default: dots)")
+    p.add_argument("--dots",   action="store_true", help="use dots bar style (default)")
+    p.add_argument("--metric", choices=["success","rtt"], default="success", help="bar metric to visualise (blocks style)")
+    p.add_argument("hosts", nargs="+", help="hosts or IPs to ping")
+    a = p.parse_args(argv)
+
+    cfg = UIConfig()
+    cfg.interval_ms = max(100, a.interval_ms)
+    cfg.timeout_s   = max(1, a.timeout)
+    cfg.window      = max(5, a.window)
+    cfg.style       = "blocks" if a.blocks else "dots"
+    if a.dots: cfg.style = "dots"
+    cfg.metric     = a.metric
+    return cfg, a.hosts
+
+def main():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    cfg, hosts = parse_args(sys.argv[1:])
+    curses.wrapper(curses_main, hosts, cfg)
+
+if __name__ == "__main__":
+    main()
+
