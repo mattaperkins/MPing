@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
-# MPing - Matt Perkins 18 November 2025 -
-# A program to print a pretty ping with optional bell with very little overhead.
-# Should work on most xterm terminals.
+# MPing - Matt Perkins 18 June 2025 - 
+# A program to print a pretty with ping and optional bell with very little overhead. 
+# Should work on most xterm 
+
+
 
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
 #    (at your option) any later version.
-#
+
 #    This program is distributed in the hope that it will be useful,
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
 #
 #    You should have received a copy of the GNU General Public License
-#    along with this program. If not, see <https://www.gnu.org/licenses/>.
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-VERSION = "1.02"
+# Version 1.01 
+
+VERSION = "1.01" 
 
 import subprocess
 import re
@@ -46,13 +50,11 @@ def print_help():
     print("  -h, --help       Show this help message and exit.")
     print("  -s, --silent     Suppress terminal bell (no audible ping).")
     print("  -v, --version    Show Version.")
-    print("  --max <ms>       Manually set fixed latency scale threshold in ms.")
-    print("  --ascii          Use ASCII output only ('_', '-', '~').")
     sys.exit(0)
 
 def get_latency(host):
     system = platform.system()
-
+    
     if system == "Linux":
         ping_cmd = ["ping", "-c", "1", "-W", "1", host]
     elif system == "Darwin":
@@ -83,7 +85,7 @@ def check_host_resolvable(host):
 
 def determine_scale(host, pings=3, fallback=300.0):
     latencies = []
-    print(f"MPing - Matt Perkins. Version {VERSION}")
+    print(f"MPing - Matt Perkins. Version {VERSION}") 
     print(f"Probing {host} to determine scale...")
     for _ in range(pings):
         latency = get_latency(host)
@@ -116,75 +118,50 @@ def colourise_block(char, latency, scale_max):
     else:
         return f"{GREEN}{char}{RESET}"
 
-def print_key(scale_max, ascii_mode):
+def print_key(scale_max):
     print("Latency Graph Key:")
-    if ascii_mode:
-        print("  _ = latency OK")
-        print("  - = slow latency")
-        print("  ~ = timeout / unreachable\n")
-    else:
-        print(f"  {GREEN}■{RESET} = latency OK (< {scale_max:.0f}ms)")
-        print(f"  {YELLOW}■{RESET} = slow (> {scale_max:.0f}ms)")
-        print(f"  {RED}■{RESET} = timeout / unreachable\n")
+    print(f"  {GREEN}■{RESET} = latency OK (< {scale_max:.0f}ms)")
+    print(f"  {YELLOW}■{RESET} = slow (> {scale_max:.0f}ms)")
+    print(f"  {RED}■{RESET} = timeout / unreachable\n")
 
 def parse_args():
     host = None
     silent = False
-    ascii_mode = False
-    scale_override = None
     args = sys.argv[1:]
-    i = 0
 
     if not args:
         print_help()
 
-    while i < len(args):
-        arg = args[i]
+    for arg in args:
         if arg in ('-h', '--help'):
             print_help()
         elif arg in ('-s', '--silent'):
             silent = True
         elif arg in ('-v', '--version'):
-            print(f"MPing - Matt Perkins. Version {VERSION}")
+            print(f"MPing - Matt Perkins.  Version {VERSION}")
             sys.exit(0)
-        elif arg == '--ascii':
-            ascii_mode = True
-        elif arg == '--max':
-            try:
-                scale_override = float(args[i+1])
-                i += 1
-            except:
-                print(f"{RED}Error:{RESET} --max requires a numeric value.\n")
-                print_help()
         elif not arg.startswith('-'):
             host = arg
         else:
             print(f"{RED}Unknown option:{RESET} {arg}")
             print_help()
-        i += 1
 
     if not host:
         print(f"{RED}Error:{RESET} No host or IP provided.\n")
         print_help()
 
-    return host, silent, ascii_mode, scale_override
+    return host, silent
 
 def main():
-    host, silent, ascii_mode, scale_override = parse_args()
+    host, silent = parse_args()
 
     if not check_host_resolvable(host):
         print(f"{RED}Error:{RESET} Host '{host}' not found.")
         sys.exit(2)
 
-    if scale_override is not None:
-        print(f"MPing - Matt Perkins. Version {VERSION}")
-        print(f"Using fixed scale: {scale_override:.1f}ms\n")
-        scale_max = scale_override
-    else:
-        scale_max = determine_scale(host)
-
+    scale_max = determine_scale(host)
     term_width = shutil.get_terminal_size().columns
-    graph_width = max(10, term_width - 38)
+    graph_width = max(10, term_width - 38)  # Leave room for jitter/loss display
 
     visible_history = []
     coloured_history = []
@@ -195,56 +172,42 @@ def main():
     total_pings = 0
     loss_count = 0
 
-    print_key(scale_max, ascii_mode)
+    print_key(scale_max)
     print(f"Pinging {host}... Press Ctrl+C to stop\n")
 
     try:
         while True:
             latency = get_latency(host)
-
             if latency is not None and not silent:
                 print('\a', end='', flush=True)
 
             total_pings += 1
-
             if latency is None:
                 loss_count += 1
-                char = '~'
-                coloured = '~'
+                block = last_valid_char
+                coloured = colourise_block(block, None, scale_max)
             else:
-                if latency > scale_max:
-                    char = '-'
-                else:
-                    char = '_'
-
-                last_valid_char = char
-
+                block = latency_to_block(latency, scale_max)
+                coloured = colourise_block(block, latency, scale_max)
+                last_valid_char = block
                 if prev_latency is not None:
                     jitter = abs(latency - prev_latency)
                 prev_latency = latency
 
-                if ascii_mode:
-                    coloured = char
-                else:
-                    block = latency_to_block(latency, scale_max)
-                    coloured = colourise_block(block, latency, scale_max)
-
+            visible_history.append(block)
             coloured_history.append(coloured)
-            visible_history.append(char)
 
             if len(visible_history) > graph_width:
                 visible_history.pop(0)
                 coloured_history.pop(0)
 
             coloured_bar = ''.join(coloured_history)
+            latency_display = f"{latency:.1f}ms" if latency is not None else "timeout"
             jitter_display = f"jitter: {jitter:.1f}ms"
             loss_percent = (loss_count / total_pings) * 100
             loss_display = f"loss: {loss_percent:.0f}%"
-            latency_display = f"{latency:.1f}ms" if latency is not None else "timeout"
 
-            print(f"\r{coloured_bar} {latency_display:<8}  {jitter_display:<14} {loss_display:<8}",
-                  end='', flush=True)
-
+            print(f"\r{coloured_bar} {latency_display:<8}  {jitter_display:<14} {loss_display:<8}", end='', flush=True)
             time.sleep(1)
 
     except KeyboardInterrupt:

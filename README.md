@@ -1,114 +1,86 @@
-# MPING
+.TH MPING 1 "18 June 2025" "Version 1.02" "MPing Manual"
 
-## About
+.SH NAME
+mping \- terminal-based visual ping utility with jitter and loss display
 
-MPing is a short and sweet Python program that visualises the latency and loss of ICMP echo requests (ping) to a target host or IP address. It displays a live terminal-based graph using Unicode block characters, and includes colour-coded output, jitter calculation, and optional audible alerts.
+.SH SYNOPSIS
+.B mping
+[\fB-s\fR|\fB--silent\fR]
+[\fB--max \fIms\fR]
+[\fB--ascii\fR]
+[\fB-h\fR|\fB--help\fR]
+[\fB-v\fR|\fB--version\fR]
+\fIhost_or_ip\fR
 
-It’s ideal for quick diagnostics of network quality, WAN latency shifts, or visual uptime monitoring.
+.SH DESCRIPTION
+\fBMPing\fR is a terminal-based ping visualiser that sends ICMP echo requests to a host and displays the result using a horizontally scrolling graph.
 
----
+Each ping is shown using coloured Unicode blocks (or ASCII characters) and annotated with jitter and packet loss statistics in real time.
 
-## Features
+MPing is intended to provide a clear, at-a-glance view of network quality in an xterm or console environment.
 
-- Live horizontal latency graph using Unicode block symbols.
-- **Colour-coded output:**
-  - 🟩 Green – latency OK (below threshold)
-  - 🟨 Yellow – slow (above threshold)
-  - 🔴 Red – timeout (packet loss)
-- **Live metrics display**:
-  - Latest latency (`ms`)
-  - Jitter between samples (`ms`)
-  - Total packet loss percentage (`%`)
-- Automatically scales latency bar based on initial pings.
-- Audible terminal bell (can be disabled with `-s`).
-- Clean one-line display, terminal width aware.
-- Works on Linux and macOS terminals (with `ping`).
+.SH OPTIONS
+.TP
+\fB-h\fR, \fB--help\fR
+Show usage and help information.
 
----
+.TP
+\fB-s\fR, \fB--silent\fR
+Suppress the terminal bell. By default, a bell sounds after each successful ping.
 
-## Example Output
+.TP
+\fB-v\fR, \fB--version\fR
+Show the program version and exit.
 
-```
+.TP
+\fB--max \fIms\fR
+Override automatic scale detection and use a fixed maximum latency (in milliseconds) for block height scaling.
+
+.TP
+\fB--ascii\fR
+Use ASCII characters instead of Unicode blocks:
+.RS
+.TP
+\fB_\fR - latency OK
+.TP
+\fB-\fR - latency slow (over max threshold)
+.TP
+\fB~\fR - timeout or unreachable
+.RE
+
+.SH OUTPUT
+Each line updates once per second and includes:
+.RS
+.IP \[bu] 2
+Visual bar of blocks (or ASCII characters) representing the last N pings
+.IP \[bu]
+Current latency (ms)
+.IP \[bu]
+Jitter (difference between last 2 RTTs)
+.IP \[bu]
+Packet loss percentage since start
+.RE
+
+Example output:
+.EX
 ▁▃▅▅▆▇█▇▇▆▅▃▁▁▁▁▁▁▁▁ timeout  jitter: 15.2ms  loss: 18%
-```
+.EE
 
-Each block character represents a ping. Timeouts repeat the last good symbol in red.
+.SH PLATFORM SUPPORT
+MPing automatically selects the appropriate ping command based on the platform:
 
----
+.TP
+\fBLinux\fR
+ping -c 1 -W 1
 
-## Usage
+.TP
+\fBmacOS\fR
+ping -c 1 -t 1
 
-```bash
-python3 mping [options] <host_or_ip>
-```
+.SH LICENSE
+MPing is licensed under the GNU General Public License version 3.
+See: https://www.gnu.org/licenses/gpl-3.0.html
 
-### Options:
-
-| Option            | Description                         |
-| ----------------  | ----------------------------------- |
-| `-h`, `--help`    | Show help and usage information     |
-| `-s`, `--silent`  | Suppress terminal bell on each ping |
-| `-v`, `--version` | Suppress terminal bell on each ping |
-
-### Examples:
-
-```bash
-# Ping Google's DNS with sound
-python3 mping 8.8.8.8
-
-# Silent mode
-python3 mping -s 1.1.1.1
-```
-
----
-
-## Dependencies
-
-- Python 3.6+
-- `ping` command available (default on Unix-like systems)
-- Works best in terminals supporting:
-  - ANSI colour escape codes
-  - Unicode block drawing characters
-  - A monospace font
-
----
-
-## Notes
-
-- Designed for simplicity and terminal legibility.
-- Not intended to replace tools like `mtr` or `smokeping`, but to provide an at-a-glance real-time visual.
-- Will gracefully handle DNS errors and pings that timeout.
-
----
-
-## Future Ideas
-
-- CSV logging mode
-- IPv6 support
-
----
-
-## Install 
-
-On most systems it should be a matter of 
-<pre>git clone https://github.com/mattaperkins/MPing ; sudo make install </pre>
-
-<img src="shot.png"> 
-
----
-
-
-
-## License
-
-GNU GENERAL PUBLIC LICENSE
-
----
-## Tested
-
-Tested on Ubuntu 24.4.2 and MacOS 15.4.1 
-
----
-
-
+.SH AUTHOR
 Written by Matt Perkins, 2025.
+
