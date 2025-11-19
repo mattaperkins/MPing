@@ -44,12 +44,14 @@ PING_SUMMARY_RE = re.compile(r'(?:rtt|round-trip)\s+[^\=]*=\s*([\d.,]+)/([\d.,]+
 
 # ---------------- Data classes -------------------
 class HostStats:
-    __slots__ = ("host","sent","recv",
-                 "rtt_sum","rtt_cnt","rtt_min","rtt_max",
-                 "last_rtt_ms",
-                 "win_size","win_pos","win_ok",
-                 "last_error","dot_len",
-                 "rtt_ring","rtt_ring_cap")
+    __slots__ = (
+        "host", "sent", "recv",
+        "rtt_sum", "rtt_cnt", "rtt_min", "rtt_max",
+        "last_rtt_ms",
+        "win_size", "win_pos", "win_ok",
+        "last_error", "dot_len",
+        "rtt_ring", "rtt_ring_cap"
+    )
 
     def __init__(self, host: str, window: int, ring_cap: int):
         self.host = host
@@ -62,7 +64,7 @@ class HostStats:
         self.last_rtt_ms: Optional[float] = None
         self.win_size = window
         self.win_pos = 0
-        self.win_ok = [0]*window
+        self.win_ok = [0] * window
         self.last_error: Optional[str] = None
         self.dot_len = 0
         self.rtt_ring: List[float] = []
@@ -76,7 +78,7 @@ class HostStats:
         self.last_rtt_ms = None
         if window is not None and window != self.win_size:
             self.win_size = window
-            self.win_ok = [0]*window
+            self.win_ok = [0] * window
         else:
             for i in range(self.win_size):
                 self.win_ok[i] = 0
@@ -101,30 +103,44 @@ class HostStats:
             return None
         return sum(self.rtt_ring) / float(len(self.rtt_ring))
 
+    def jitter(self) -> float:
+        """
+        Jitter = mean absolute deviation of recent RTT samples (rtt_ring).
+        Returns 0.0 if fewer than 2 samples.
+        """
+        n = len(self.rtt_ring)
+        if n <= 1:
+            return 0.0
+        avg = sum(self.rtt_ring) / n
+        return sum(abs(x - avg) for x in self.rtt_ring) / n
+
     def success_frac(self) -> float:
         return (sum(self.win_ok) / float(self.win_size)) if self.win_size else 0.0
 
     def loss_pct(self) -> float:
-        return (100.0*(self.sent - self.recv)/self.sent) if self.sent else 0.0
+        return (100.0 * (self.sent - self.recv) / self.sent) if self.sent else 0.0
 
     def avg_rtt(self) -> float:
-        return (self.rtt_sum/self.rtt_cnt) if self.rtt_cnt else 0.0
+        return (self.rtt_sum / self.rtt_cnt) if self.rtt_cnt else 0.0
 
 # ---------------- RTT parsing --------------------
 def _parse_rtt(stdout: str, stderr: str) -> Tuple[Optional[float], Optional[float]]:
     last_ms: Optional[float] = None
     avg_ms: Optional[float] = None
+
     def to_float(s: str) -> Optional[float]:
         try:
             return float(s.replace(",", "."))
         except Exception:
             return None
+
     for line in stdout.splitlines():
         m = PING_RTT_RE.search(line)
         if m:
             v = to_float(m.group(1))
             if v is not None:
                 last_ms = v
+
     text = stdout + "\n" + (stderr or "")
     sm = PING_SUMMARY_RE.search(text)
     if sm:
@@ -134,7 +150,7 @@ def _parse_rtt(stdout: str, stderr: str) -> Tuple[Optional[float], Optional[floa
 # ---------------- Worker thread ------------------
 class PingWorker(threading.Thread):
     def __init__(self, host: str, interval_ms: int, timeout_s: int,
-                 outq: "queue.Queue[Tuple[str,dict]]"):
+                 outq: "queue.Queue[Tuple[str, dict]]"):
         super().__init__(daemon=True)
         self.host = host
         self.interval_ms = interval_ms
@@ -153,7 +169,11 @@ class PingWorker(threading.Thread):
     def run(self):
         while not self.stop_evt.is_set():
             t0 = time.time()
-            sent = 1; recv = 0; last_ms = None; avg_ms = None; err = None
+            sent = 1
+            recv = 0
+            last_ms = None
+            avg_ms = None
+            err = None
             try:
                 proc = subprocess.run(self.base_cmd, text=True, capture_output=True)
                 if proc.returncode == 0:
@@ -168,10 +188,16 @@ class PingWorker(threading.Thread):
                         err = tail[-1] if tail else None
             except Exception as e:
                 err = str(e)
-            self.q.put((self.host, {"sent": sent, "recv": recv, "last_ms": last_ms, "avg_ms": avg_ms, "err": err}))
-            elapsed_ms = int((time.time()-t0)*1000)
+            self.q.put((self.host, {
+                "sent": sent,
+                "recv": recv,
+                "last_ms": last_ms,
+                "avg_ms": avg_ms,
+                "err": err
+            }))
+            elapsed_ms = int((time.time() - t0) * 1000)
             sleep_ms = max(0, self.interval_ms - elapsed_ms)
-            self.stop_evt.wait(sleep_ms/1000.0)
+            self.stop_evt.wait(sleep_ms / 1000.0)
 
 # ---------------- TUI helpers --------------------
 class UIConfig:
@@ -199,7 +225,8 @@ def draw_bar_blocks_latency(ms: Optional[float], width: int, max_lat_ms: int) ->
     else:
         frac = min(1.0, float(ms) / float(max_lat_ms))
         filled = int(frac * width + 0.5)
-        if filled == 0: filled = 1
+        if filled == 0:
+            filled = 1
     filled = max(0, min(width, filled))
     return "█" * filled + "░" * (width - filled)
 
@@ -208,7 +235,7 @@ def draw_bar_dots_progress(dot_len: int, width: int) -> str:
     return "•" * dot_len + "·" * (width - dot_len)
 
 def fit(s: str, n: int) -> str:
-    return s if len(s)<=n else (s[:max(0,n-1)]+"…")
+    return s if len(s) <= n else (s[:max(0, n - 1)] + "…")
 
 # ---------------- Main TUI loop ------------------
 def curses_main(stdscr, hosts: List[str], cfg: UIConfig):
@@ -222,9 +249,10 @@ def curses_main(stdscr, hosts: List[str], cfg: UIConfig):
     curses.init_pair(4, curses.COLOR_CYAN,   -1)
 
     stats: Dict[str, HostStats] = {h: HostStats(h, cfg.window, cfg.blocks_avg) for h in hosts}
-    q: "queue.Queue[Tuple[str,dict]]" = queue.Queue()
+    q: "queue.Queue[Tuple[str, dict]]" = queue.Queue()
     workers = [PingWorker(h, cfg.interval_ms, cfg.timeout_s, q) for h in hosts]
-    for w in workers: w.start()
+    for w in workers:
+        w.start()
 
     def reset_all():
         for hs in stats.values():
@@ -232,34 +260,41 @@ def curses_main(stdscr, hosts: List[str], cfg: UIConfig):
 
     try:
         while True:
+            # Drain queue
             while True:
                 try:
                     host, update = q.get_nowait()
                 except queue.Empty:
                     break
                 hs = stats.get(host)
-                if not hs: continue
+                if not hs:
+                    continue
                 hs.sent += update["sent"]
                 hs.recv += update["recv"]
                 last_ms = update.get("last_ms")
                 avg_ms_from_summary = update.get("avg_ms")
+
                 if last_ms is not None:
                     hs.last_rtt_ms = last_ms
-                    hs.rtt_sum += last_ms; hs.rtt_cnt += 1
+                    hs.rtt_sum += last_ms
+                    hs.rtt_cnt += 1
                     hs.rtt_min = last_ms if hs.rtt_cnt == 1 else min(hs.rtt_min, last_ms)
                     hs.rtt_max = last_ms if hs.rtt_cnt == 1 else max(hs.rtt_max, last_ms)
                     hs.push_rtt(last_ms)
                 elif avg_ms_from_summary is not None:
                     hs.last_rtt_ms = avg_ms_from_summary
-                    hs.rtt_sum += avg_ms_from_summary; hs.rtt_cnt += 1
+                    hs.rtt_sum += avg_ms_from_summary
+                    hs.rtt_cnt += 1
                     hs.rtt_min = avg_ms_from_summary if hs.rtt_cnt == 1 else min(hs.rtt_min, avg_ms_from_summary)
                     hs.rtt_max = avg_ms_from_summary if hs.rtt_cnt == 1 else max(hs.rtt_max, avg_ms_from_summary)
                     hs.push_rtt(avg_ms_from_summary)
+
                 ok = 1 if update["recv"] else 0
                 hs.push_window(ok)
                 if ok:
                     hs.dot_len += 1
-                    if hs.dot_len >= cfg.bar_width: hs.dot_len = 0
+                    if hs.dot_len >= cfg.bar_width:
+                        hs.dot_len = 0
                 else:
                     hs.dot_len = 0
                 if update["err"]:
@@ -267,90 +302,152 @@ def curses_main(stdscr, hosts: List[str], cfg: UIConfig):
 
             stdscr.erase()
             rows, cols = stdscr.getmaxyx()
+
+            # Header
             stdscr.attron(curses.A_BOLD)
             stdscr.addstr(0, 0, "mping-multi — Multi Host Monitor")
             stdscr.attroff(curses.A_BOLD)
             stdscr.addstr(1, 0, fit("(Matt Perkins © | s=style +/-=width r=reset q=quit)", cols))
             stdscr.hline(2, 0, curses.ACS_HLINE, cols)
-            info = (f"Interval:{cfg.interval_ms}ms  Timeout:{cfg.timeout_s}s  Window:{cfg.window}  "
-                    f"Bar:{cfg.bar_width}  Style:{cfg.style}  Slow≥{cfg.slow_ms}ms  "
-                    f"BlocksMax:{cfg.max_lat_ms}ms  BlocksMode:{cfg.blocks_mode}({cfg.blocks_avg})  "
-                    f"{'macOS' if IS_MAC else 'Linux'}")
+            info = (
+                f"Interval:{cfg.interval_ms}ms  Timeout:{cfg.timeout_s}s  Window:{cfg.window}  "
+                f"Bar:{cfg.bar_width}  Style:{cfg.style}  Slow≥{cfg.slow_ms}ms  "
+                f"BlocksMax:{cfg.max_lat_ms}ms  BlocksMode:{cfg.blocks_mode}({cfg.blocks_avg})  "
+                f"{'macOS' if IS_MAC else 'Linux'}"
+            )
             stdscr.addstr(3, 0, fit(info, cols))
             stdscr.hline(4, 0, curses.ACS_HLINE, cols)
             stdscr.attron(curses.A_BOLD)
-            stdscr.addstr(5, 0, fit(f"{'Host':24} {'Sent':>7} {'Recv':>7} {'Loss%':>7} {'Last':>7} {'Avg':>7} {'Min':>7} {'Max':>7}  Bar", cols))
+            stdscr.addstr(
+                5,
+                0,
+                fit(
+                    f"{'Host':24} {'Sent':>7} {'Recv':>7} {'Loss%':>7} "
+                    f"{'Last':>7} {'Avg':>7} {'Jit':>7} {'Min':>7} {'Max':>7}  Bar",
+                    cols,
+                ),
+            )
             stdscr.attroff(curses.A_BOLD)
 
             y = 6
+            error_msgs: List[str] = []
+
+            # Leave last two lines free: rows-2 (errors), rows-1 (help)
             for h in hosts:
-                if y >= rows-1: break
+                if y >= rows - 3:
+                    break
                 hs = stats[h]
                 loss = hs.loss_pct()
                 avg_all = hs.avg_rtt()
+                jitter_val = hs.jitter()
+
                 if cfg.style == "dots":
                     bar = draw_bar_dots_progress(hs.dot_len, cfg.bar_width)
                 else:
                     if cfg.blocks_mode == "avg":
                         ms_for_bar = hs.ring_avg()
                         if ms_for_bar is None:
-                            ms_for_bar = hs.last_rtt_ms if hs.last_rtt_ms is not None else (avg_all if avg_all>0 else None)
+                            if hs.last_rtt_ms is not None:
+                                ms_for_bar = hs.last_rtt_ms
+                            elif avg_all > 0:
+                                ms_for_bar = avg_all
+                            else:
+                                ms_for_bar = None
                     else:
-                        ms_for_bar = hs.last_rtt_ms if hs.last_rtt_ms is not None else (avg_all if avg_all>0 else None)
+                        if hs.last_rtt_ms is not None:
+                            ms_for_bar = hs.last_rtt_ms
+                        elif avg_all > 0:
+                            ms_for_bar = avg_all
+                        else:
+                            ms_for_bar = None
                     bar = draw_bar_blocks_latency(ms_for_bar, cfg.bar_width, cfg.max_lat_ms)
+
                 colour = colour_for_mping_style(loss, avg_all, cfg.slow_ms)
                 stdscr.attron(curses.color_pair(colour))
                 last_disp = hs.last_rtt_ms if hs.last_rtt_ms is not None else 0.0
-                line = f"{fit(hs.host,24):24} {hs.sent:7d} {hs.recv:7d} {loss:7.1f} {last_disp:7.1f} {avg_all:7.1f} {hs.rtt_min:7.1f} {hs.rtt_max:7.1f}  {bar}"
+                line = (
+                    f"{fit(hs.host,24):24} {hs.sent:7d} {hs.recv:7d} {loss:7.1f} "
+                    f"{last_disp:7.1f} {avg_all:7.1f} {jitter_val:7.1f} "
+                    f"{hs.rtt_min:7.1f} {hs.rtt_max:7.1f}  {bar}"
+                )
                 stdscr.addstr(y, 0, fit(line, cols))
                 stdscr.attroff(curses.color_pair(colour))
-                if hs.last_error and y+1 < rows-1:
-                    stdscr.attron(curses.color_pair(4))
-                    stdscr.addstr(y+1, 4, fit(f"last error: {hs.last_error}", cols-4))
-                    stdscr.attroff(curses.color_pair(4))
-                    y += 1
+
+                if hs.last_error:
+                    error_msgs.append(f"{hs.host}: {hs.last_error}")
+
                 y += 1
-            stdscr.addstr(rows-1, 0, fit("q=quit  s=style  +=wider  -=narrow  r=reset", cols))
+
+            # Error status line (second from bottom)
+            if rows >= 2:
+                if error_msgs:
+                    err_text = " | ".join(error_msgs)
+                    stdscr.attron(curses.color_pair(4))
+                    stdscr.addstr(rows - 2, 0, fit(f"Errors: {err_text}", cols))
+                    stdscr.attroff(curses.color_pair(4))
+                else:
+                    stdscr.addstr(rows - 2, 0, fit("", cols))
+
+            # Footer / key hints (bottom line)
+            if rows >= 1:
+                stdscr.addstr(rows - 1, 0, fit("q=quit  s=style  +=wider  -=narrow  r=reset", cols))
+
             stdscr.refresh()
-            try: ch = stdscr.getch()
-            except curses.error: ch = -1
-            if ch in (ord('q'), ord('Q')): break
+
+            try:
+                ch = stdscr.getch()
+            except curses.error:
+                ch = -1
+
+            if ch in (ord('q'), ord('Q')):
+                break
             elif ch in (ord('s'), ord('S')):
                 cfg.style = "blocks" if cfg.style == "dots" else "dots"
-                for hs in stats.values(): hs.dot_len = min(hs.dot_len, cfg.bar_width)
+                for hs in stats.values():
+                    hs.dot_len = min(hs.dot_len, cfg.bar_width)
             elif ch == ord('+'):
                 cfg.bar_width = min(120, cfg.bar_width + 2)
             elif ch == ord('-'):
                 cfg.bar_width = max(8, cfg.bar_width - 2)
-            elif ch in (ord('r'), ord('R')): reset_all()
+            elif ch in (ord('r'), ord('R')):
+                reset_all()
+
             time.sleep(0.05)
     finally:
-        for w in workers: w.stop(); w.join()
+        for w in workers:
+            w.stop()
+            w.join()
 
 # ---------------- Arg parse ----------------------
 def parse_args(argv: List[str]) -> Tuple['UIConfig', List[str]]:
-    p = argparse.ArgumentParser(description="mping-multi — multi-host ping with Unicode bar graphs (curses)")
-    p.add_argument("-i","--interval-ms", type=int, default=DEFAULT_INTERVAL_MS)
-    p.add_argument("-t","--timeout", type=int, default=DEFAULT_TIMEOUT_S)
-    p.add_argument("-w","--window", type=int, default=DEFAULT_WINDOW)
+    p = argparse.ArgumentParser(
+        description="mping-multi — multi-host ping with Unicode bar graphs (curses)"
+    )
+    p.add_argument("-i", "--interval-ms", type=int, default=DEFAULT_INTERVAL_MS)
+    p.add_argument("-t", "--timeout", type=int, default=DEFAULT_TIMEOUT_S)
+    p.add_argument("-w", "--window", type=int, default=DEFAULT_WINDOW)
     p.add_argument("--blocks", action="store_true", help="start in blocks mode")
     p.add_argument("--dots", action="store_true", help="start in dots mode")
     p.add_argument("--slow-ms", type=int, default=DEFAULT_SLOW_MS)
     p.add_argument("--max-lat-ms", type=int, default=DEFAULT_MAX_LAT_MS)
-    p.add_argument("--blocks-mode", choices=["last","avg"], default=DEFAULT_BLOCKS_MODE)
+    p.add_argument("--blocks-mode", choices=["last", "avg"], default=DEFAULT_BLOCKS_MODE)
     p.add_argument("--blocks-avg", type=int, default=DEFAULT_BLOCKS_AVG)
     p.add_argument("hosts", nargs="+")
     a = p.parse_args(argv)
+
     cfg = UIConfig()
     cfg.interval_ms = max(100, a.interval_ms)
     cfg.timeout_s = max(1, a.timeout)
     cfg.window = max(5, a.window)
-    if a.dots: cfg.style = "dots"
-    else: cfg.style = "blocks"
+    if a.dots:
+        cfg.style = "dots"
+    else:
+        cfg.style = "blocks"
     cfg.slow_ms = max(1, a.slow_ms)
     cfg.max_lat_ms = max(10, a.max_lat_ms)
     cfg.blocks_mode = a.blocks_mode
     cfg.blocks_avg = max(1, a.blocks_avg)
+
     return cfg, a.hosts
 
 def main():
@@ -360,4 +457,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
