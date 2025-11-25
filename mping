@@ -17,7 +17,7 @@
 #    along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
-VERSION = "1.02"
+VERSION = "1.03"
 
 import subprocess
 import re
