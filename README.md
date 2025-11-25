@@ -50,8 +50,7 @@ cd MPing
 
 Install:
 
-sudo install -m 755 mping.py /usr/local/bin/mping
-sudo install -m 755 mping_multi.py /usr/local/bin/mping-multi
+sudo make install
 
 ---------------------------------------------------------------------
 
