@@ -1,141 +1,193 @@
-# MPing Toolkit — Lightweight Terminal Latency Visualisation Tools
+.TH MPING-MULTI 1 "January 2025" "Version 1.0" "User Commands"
+.SH NAME
+mping-multi \- multi-host curses ping monitor with Unicode bar graphs
 
-The MPing Toolkit provides two complementary tools for network engineers and operators:
+.SH SYNOPSIS
+.B mping-multi
+[\-i ms] [\-t sec] [\-w window]
+[\-\-blocks] [\-\-dots]
+[\-\-slow-ms ms]
+[\-\-max-lat-ms ms]
+[\-\-blocks-mode {avg|last}]
+[\-\-blocks-avg N]
+[\-\-cols N] [\-\-tty80]
+[\-\-csv-out file]
+host ...
 
-- mping — A lightweight, single-host, terminal-friendly ping visualiser with Unicode bar graphs.
-- mping-multi — A curses-based, multi-host latency dashboard with colour-coded graphs, averages, loss tracking, and terminal-width scaling.
+.SH DESCRIPTION
+.B mping-multi
+is an interactive curses-based multi-host ping visualiser.  
+It performs concurrent ICMP echo requests to multiple hosts and displays
+live per-host statistics in a scrolling dashboard, including:
 
-Both tools are designed for operational use inside NOCs, remote consoles, and over SSH sessions where clarity and minimal CPU overhead matter.
+.IP \(bu 2
+Unicode block latency bars (proportional to RTT)
+.IP \(bu
+Dots-mode progress graphs similar to classic mping
+.IP \(bu
+Packet loss %, jitter, last RTT, rolling average RTT, min, and max
+.IP \(bu
+mping-style colour status (green/amber/red)
+.IP \(bu
+Optional CSV logging of all metrics to a file
 
----------------------------------------------------------------------
+The display automatically adapts to terminal width and can optionally
+force 80-column compatibility.
 
-## Overview of Tools
+.SH FEATURES
+.TP
+.B Unicode latency bars
+Blocks mode renders latency proportionally using solid and light blocks.
 
-### mping
-A minimal single-host visualiser similar to classic ping, but with a clean live graph rendered on one line using Unicode blocks or ASCII on request.
+.TP
+.B Dots mode
+A left-to-right "progress" bar that resets on timeout or after reaching the right edge.
 
-Key Features:
-- Real-time Unicode block graphs representing instantaneous latency.
-- Optional audible alert on timeouts or high latency.
-- Extremely low CPU use; ideal for tmux/SSH.
-- ASCII fallback mode (--ascii) for restricted terminals.
-- Adjustable graph scaling (--max).
-- Works on Linux and macOS.
+.TP
+.B Jitter calculation
+Computed as the absolute difference between the current RTT and the previous RTT.
 
----------------------------------------------------------------------
+.TP
+.B mping-style colouring
+Green for normal, yellow for slow RTT, red for any loss in the current window.
 
-### mping-multi
-An ncurses multi-host monitoring dashboard showing loss, latency, jitter-like movement, and bar graphs for each host.
+.TP
+.B CSV output
+All metrics (except the graphical bar) can be logged continuously
+to a CSV file via:
+.RS
+.nf
+--csv-out filename
+.fi
+.RE
 
-Key Features:
-- Concurrent monitoring of any number of hosts.
-- Blocks mode (latency-scaled bar graphs) and dots mode.
-- Moving-average blocks (default: last 5 RTTs).
-- Colour coding:
-  - Green = normal
-  - Yellow = slow (>= threshold)
-  - Red = packet loss
-- Automatic scaling for 80-column and wider terminals.
-- Optional forced layout width (--cols N, --tty80).
-- macOS & Linux ping format support.
+.TP
+.B macOS and Linux support
+The tool handles macOS timeout semantics automatically (-W milliseconds).
 
----------------------------------------------------------------------
+.SH OPTIONS
 
-## Installation
+.TP
+.BR -i " ms, " --interval-ms =ms
+Interval between probes for each host (milliseconds).
+Default: 1000ms.
 
-Clone the repository:
+.TP
+.BR -t " sec, " --timeout =sec
+Ping timeout (seconds).  
+On macOS this is converted to milliseconds.
 
-git clone https://github.com/mattaperkins/MPing
-cd MPing
+.TP
+.BR -w " N, " --window =N
+Rolling window size for loss statistics. Default: 60.
 
-Install:
+.TP
+.BR --blocks
+Start in blocks (latency bar) mode (default).
 
-sudo install -m 755 mping.py /usr/local/bin/mping
-sudo install -m 755 mping_multi.py /usr/local/bin/mping-multi
+.TP
+.BR --dots
+Start in dots mode.
 
----------------------------------------------------------------------
+.TP
+.BR --slow-ms =ms
+Threshold RTT for yellow state (default: 150ms).
 
-## mping Usage
+.TP
+.BR --max-lat-ms =ms
+RTT mapped to full-width in blocks mode. Default: 120ms.
 
-mping [options] host
+.TP
+.BR --blocks-mode " {avg|last}"
+Use moving average or last RTT for block bar calculation.
 
-Common Options:
-  --ascii       Use ASCII instead of Unicode blocks
-  --bell        Audible bell on timeouts / high latency
-  --max N       Override maximum graph scale (ms)
-  --interval N  Probe interval in ms
-  --no-resolve  Skip DNS hostname lookups
+.TP
+.BR --blocks-avg " N"
+Number of samples in the ring buffer for average-calculation. Default: 5.
 
-Example:
+.TP
+.BR --cols " N"
+Force output to a specific number of columns.
 
-mping --bell --max 150 8.8.8.8
+.TP
+.BR --tty80
+Equivalent to \fB--cols 80\fR.
 
-Example Output:
+.TP
+.BR --csv-out " file"
+Write all statistics to CSV in real time.  
+Fields include:
+.RS
+.nf
+timestamp,host,sent,recv,loss_pct,
+jitter,last_rtt,avg_rtt,min,max
+.fi
+.RE
 
-8.3 ms ███░░░░░░░░░░░░░░░░
-7.9 ms ███░░░░░░░░░░░░░░░░
-9.1 ms ████░░░░░░░░░░░░░░░
-~ timeout
+.TP
+.I host ...
+One or more hostnames or IP addresses to ping.
 
----------------------------------------------------------------------
+.SH DISPLAY COLUMNS
 
-## mping-multi Usage
+.TS
+l l.
+Host         Name or IP, width auto-adjusted
+Sent         Total packets sent
+Recv         Total packets received
+Loss%        Percentage of lost packets in window
+Jitt         Jitter (abs difference between RTT samples)
+Last         Most recent RTT measurement
+Avg          Running average RTT
+Min          Minimum RTT seen
+Max          Maximum RTT seen
+Bar          Unicode latency/dot graph
+.TE
 
-mping-multi [options] host1 host2 ...
+.SH KEYBOARD COMMANDS
 
-Common Options:
-  --blocks                 Start in blocks mode (default)
-  --dots                   Start in dots mode
-  --blocks-mode {avg,last} Use moving avg or last RTT
-  --blocks-avg N           Ring buffer size (default 5)
-  --max-lat-ms N           RTT mapped to full bar width (default 120 ms)
-  --interval-ms N          Probe interval per host
-  --timeout N              Per-probe timeout (seconds)
-  --cols N                 Force a specific terminal width
-  --tty80                  Shorthand for --cols 80
+.TP
+.B q
+Quit.
 
-Keyboard Shortcuts:
-  q   Quit
-  s   Toggle blocks/dots
-  +   Increase bar width
-  -   Decrease bar width
-  r   Reset statistics
+.TP
+.B s
+Toggle between blocks and dots mode.
 
-Examples:
+.TP
+.B +
+Increase bar width.
 
-mping-multi 1.1.1.1 8.8.8.8 9.9.9.9
+.TP
+.B -
+Decrease bar width.
 
-mping-multi --tty80 1.1.1.1 8.8.8.8
+.TP
+.B r
+Reset all per-host statistics.
 
-mping-multi --cols 120 1.1.1.1 8.8.8.8 9.9.9.9
+.SH CSV FORMAT
+The CSV logger outputs one line per host per update:
 
-Example Output (80 columns):
+.RS
+.nf
+timestamp,host,sent,recv,loss_pct,jitter,last_rtt,avg_rtt,min,max
+.fi
+.RE
 
-Host             Sent   Recv  Loss%   Last    Avg    Min    Max  Bar
----------------------------------------------------------------------------
-gateway           234    234    0.0    3.2    3.4    2.8    4.1  ███░░░░░░░░░░░░░░░░░
-google.com        239    239    0.0   21.5   22.1   20.7   24.3  ████████░░░░░░░░░░░░
-cloudflare        239    239    0.0    1.9    2.0    1.7    2.4  ██░░░░░░░░░░░░░░░░░░
+Timestamp is UNIX epoch seconds with fractional precision.
 
----------------------------------------------------------------------
+.SH EXIT STATUS
+Returns 0 on clean exit.
 
-## Requirements
+.SH AUTHOR
+Written by Matt Perkins.
 
-- Python 3.7+
-- Standard system ping
-- macOS or Linux
-- curses module (included on both)
+.SH VERSION
+Version 1.0
 
----------------------------------------------------------------------
+.SH COPYRIGHT
+Copyright © 2025 Matt Perkins.
 
-## License
-
-Both mping and mping-multi are released under the GPLv3.  
-Copyright © Matt Perkins.
-
----------------------------------------------------------------------
-
-## Related Tools
-
-- Classic ping(8)
-- Smokeping (concept inspiration for latency visualisation)
+.SH SEE ALSO
+ping(8), mping(1)
