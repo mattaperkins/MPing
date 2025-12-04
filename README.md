@@ -65,6 +65,7 @@ Common Options:
   --interval N  Probe interval in ms
   --no-resolve  Skip DNS hostname lookups
 
+
 Example:
 
 mping --bell --max 150 8.8.8.8
@@ -90,6 +91,7 @@ Common Options:
   --timeout N              Per-probe timeout (seconds)
   --cols N                 Force a specific terminal width
   --tty80                  Shorthand for --cols 80
+  --csv-out CSV_OUT     write CSV output to this file in parallel
 
 Keyboard Shortcuts:
   q   Quit
